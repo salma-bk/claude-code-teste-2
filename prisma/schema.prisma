@@ -1,0 +1,84 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+}
+
+enum TaskStatus {
+  PENDING    // not yet scheduled
+  SUGGESTED  // auto-assignment proposed, awaiting validation
+  SCHEDULED  // validated and placed on the calendar
+  DONE
+  CANCELLED
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  availabilities Availability[]
+  timeOffs       TimeOff[]
+  assignedTasks  Task[]          @relation("AssignedTasks")
+  createdTasks   Task[]          @relation("CreatedTasks")
+}
+
+// Recurring weekly availability, e.g. Monday 09:00-17:00
+model Availability {
+  id          String @id @default(cuid())
+  userId      String
+  user        User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  dayOfWeek   Int // 0 = Sunday ... 6 = Saturday
+  startMinute Int // minutes since midnight, e.g. 540 = 09:00
+  endMinute   Int // minutes since midnight, e.g. 1020 = 17:00
+
+  @@index([userId, dayOfWeek])
+}
+
+// One-off exception that overrides recurring availability for a specific date
+// (e.g. vacation, public holiday, sick day) - always marks the day unavailable
+model TimeOff {
+  id     String   @id @default(cuid())
+  userId String
+  user   User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  date   DateTime @db.Date
+  reason String?
+
+  @@unique([userId, date])
+}
+
+model Task {
+  id              String     @id @default(cuid())
+  title           String
+  description     String?
+  durationMinutes Int
+  priority        Priority   @default(MEDIUM)
+  deadline        DateTime?
+  status          TaskStatus @default(PENDING)
+
+  assigneeId String?
+  assignee   User?   @relation("AssignedTasks", fields: [assigneeId], references: [id], onDelete: SetNull)
+
+  createdById String
+  createdBy   User   @relation("CreatedTasks", fields: [createdById], references: [id], onDelete: Cascade)
+
+  scheduledStart DateTime?
+  scheduledEnd   DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([assigneeId])
+  @@index([status])
+}
